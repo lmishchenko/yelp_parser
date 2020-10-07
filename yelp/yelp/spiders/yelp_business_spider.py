@@ -5,7 +5,10 @@ from scrapy_selenium import SeleniumRequest
 
 class YelpBusinessSpider(scrapy.Spider):
     name = 'yelp.com'
-    url = "https://www.yelp.com/biz/fog-harbor-fish-house-san-francisco-2"
+    start_urls = ['https://www.yelp.com/biz/fog-harbor-fish-house-san-francisco-2',
+                  'https://www.yelp.com/biz/beretta-pop-up-san-francisco-2',
+                  'https://www.yelp.com/biz/california-fish-market-restaurant-san-francisco-3'
+                  ]
 
     parsed_fields = [
         {
@@ -39,86 +42,84 @@ class YelpBusinessSpider(scrapy.Spider):
         }
     ]
 
-    result = {}
-
-    def start_requests(self):
-        return [SeleniumRequest(url=self.url, callback=self.parse)]
-
     def parse(self, response, **kwargs):
-        """
-        @with_selenium
-        """
-
-        self.result['direct_link'] = self.url
-        self.result['business_id'] = self.url.split('/')[-1]
+        result = {'direct_link': response.url, 'business_id': response.url.split('/')[-1]}
 
         for field in self.parsed_fields:
-            self.get_item(response, field['field_name'], field['xpath'])
+            self.get_item(response, field['field_name'], field['xpath'], result)
 
-        self.address(response)
-        self.category_list(response)
-        self.time_tible(response)
+        self.address(response, result)
+        self.category_list(response, result)
+        self.time_table(response, result)
 
-        return self.result
+        yield result
 
-    def get_item(self, response, item, xpath):
+    def get_item(self, response, item, xpath, result):
         try:
             response_to_xpath = response.selector.xpath(xpath)
-            self.result[item] = response_to_xpath.get()
+            result[item] = response_to_xpath.get()
         except Exception as e:
             self.log(item + ' ' + str(e))
 
-    def address(self, response):
+    def address(self, response, result):
         address = []
 
         try:
             address_list = response.xpath('//*[@id="wrap"]/div[3]/div/div[4]/div/div/div[2]/div/div/div[1]/div/div[1]/'
                                           'section[4]/div[2]/div[1]/div/div/div/div[1]/address')
 
+            self.log('adress list' + str(address_list))
+
+            if len(address_list) == 0:
+                address_list = response.xpath(
+                    '//*[@id="wrap"]/div[3]/div/div[4]/div/div/div[2]/div/div/div[1]/div/div[1]/'
+                    'section[3]/div[2]/div[1]/div/div/div/div[1]/address')
+
             for address_line in address_list.xpath('.//p'):
                 address.append(address_line.xpath('.//text()').get())
 
-            self.result['address'] = address
+            result['address'] = address
 
         except Exception as e:
             self.log('Address error' + str(e))
 
-    def category_list(self, response):
+    def category_list(self, response, result):
         categories = []
 
         try:
             category_list = response.xpath('//*[@id="wrap"]/div[3]/div/div[4]/div/div/div[2]/div/div/div[1]/div/div[1]/'
                                            'div[1]/div/div/span[2]')
 
+            if len(category_list) == 0:
+                category_list = response.xpath(
+                    '//*[@id="wrap"]/div[3]/div/div[4]/div/div/div[2]/div/div/div[1]/div/div[1]/'
+                    'div[1]/div/div/span')
+
             for category in category_list.xpath('.//a'):
                 categories.append(category.xpath('.//text()').get())
 
-            self.result['categories'] = categories
+            result['categories'] = categories
 
         except Exception as e:
             self.log('Category error' + str(e))
 
-    def time_tible(self, response):
+    def time_table(self, response, result):
         time_table = {}
 
         try:
             table = response.xpath('//*[@id="wrap"]/div[3]/div/div[4]/div/div/div[2]/div/div/div[1]/div/div[1]/'
                                    'section[4]/div[2]/div[2]/div/div/table/tbody')
 
+            if len(table) == 0:
+                table = response.xpath('//*[@id="wrap"]/div[3]/div/div[4]/div/div/div[2]/div/div/div[1]/div/div[1]/'
+                                       'section[3]/div[2]/div[2]/div/div/table/tbody')
+
             for time_table_item in table.xpath('.//tr'):
                 date = time_table_item.xpath('.//th/p/text()').get()
                 time = time_table_item.xpath('.//td/ul/li/p/text()').get()
                 time_table[date] = time
 
-            self.result['time_table'] = time_table
+            result['time_table'] = time_table
 
         except Exception as e:
             self.log('Time table error' + str(e))
-
-
-class WithSelenium(Contract):
-    """ Contract to set the request class to be SeleniumRequest for the current call back method to test
-    @with_selenium
-    """
-    name = 'with_selenium'
-    request_cls = SeleniumRequest
